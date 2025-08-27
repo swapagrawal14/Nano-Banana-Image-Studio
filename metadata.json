@@ -1,0 +1,5 @@
+{
+  "name": "Image Generation Studio with Nano Banana",
+  "description": "A tool to generate and edit images using the Gemini API.",
+  "requestFramePermissions": []
+}
