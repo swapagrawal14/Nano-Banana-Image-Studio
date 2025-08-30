@@ -23,10 +23,10 @@ const textToImageExamples = [
 ];
 
 const imageToImageExamples = [
-    "Turn this into a vibrant, colorful watercolor painting.",
-    "Add a steampunk-style pair of goggles to the subject.",
-    "Change the season in the photo to a snowy winter.",
-    "Make it look like a vintage photograph from the 1920s.",
+    "Combine these images into a single surreal landscape.",
+    "Add a steampunk-style pair of goggles to the person in the first photo.",
+    "Take the color palette from the second image and apply it to the first.",
+    "Create a collage of these animals having a tea party.",
 ];
 
 // Helper to convert File to base64
@@ -52,8 +52,8 @@ function App() {
 
   const [mode, setMode] = useState<Mode>('text-to-image');
   const [prompt, setPrompt] = useState('');
-  const [inputImage, setInputImage] = useState<File | null>(null);
-  const [inputImageUrl, setInputImageUrl] = useState<string | null>(null);
+  const [inputImages, setInputImages] = useState<File[]>([]);
+  const [inputImageUrls, setInputImageUrls] = useState<string[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [resultImage, setResultImage] = useState<string | null>(null);
@@ -86,12 +86,23 @@ function App() {
   };
   
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setInputImage(file);
-      setInputImageUrl(URL.createObjectURL(file));
+    const files = e.target.files;
+    if (files) {
+      const newFiles = Array.from(files);
+      const newImageUrls = newFiles.map(file => URL.createObjectURL(file));
+      setInputImages(prev => [...prev, ...newFiles]);
+      setInputImageUrls(prev => [...prev, ...newImageUrls]);
       setError('');
     }
+    e.target.value = ''; // Allow re-selecting the same file
+  };
+
+  const handleRemoveImage = (indexToRemove: number) => {
+    // Revoke the object URL to prevent memory leaks
+    URL.revokeObjectURL(inputImageUrls[indexToRemove]);
+
+    setInputImages(prev => prev.filter((_, index) => index !== indexToRemove));
+    setInputImageUrls(prev => prev.filter((_, index) => index !== indexToRemove));
   };
   
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -110,15 +121,19 @@ function App() {
         let contents;
 
         if (mode === 'image-to-image') {
-            if (!inputImage) {
-                setError('Please upload an image for image-to-image generation.');
+            if (inputImages.length === 0) {
+                setError('Please upload at least one image for image-to-image generation.');
                 setLoading(false);
                 return;
             }
-            const { mimeType, data } = await fileToBase64(inputImage);
-            const imagePart = { inlineData: { data, mimeType } };
+            const imageParts = await Promise.all(
+              inputImages.map(async (file) => {
+                const { mimeType, data } = await fileToBase64(file);
+                return { inlineData: { data, mimeType } };
+              })
+            );
             const textPart = { text: prompt };
-            contents = { parts: [imagePart, textPart] };
+            contents = { parts: [...imageParts, textPart] };
         } else {
             contents = prompt;
         }
@@ -170,8 +185,10 @@ function App() {
   const handleModeChange = (newMode: Mode) => {
     setMode(newMode);
     setPrompt('');
-    setInputImage(null);
-    setInputImageUrl(null);
+    // Clean up previous image data and URLs
+    inputImageUrls.forEach(url => URL.revokeObjectURL(url));
+    setInputImages([]);
+    setInputImageUrls([]);
     setError('');
     setResultImage(null);
     setResultText(null);
@@ -248,30 +265,38 @@ function App() {
         <form onSubmit={handleSubmit}>
           {mode === 'image-to-image' && (
             <div className="mb-6">
-              <label htmlFor="image-upload" className="block text-lg font-medium text-slate-300 mb-2">
-                Upload Image
+              <label className="block text-lg font-medium text-slate-300 mb-2">
+                Upload Image(s)
               </label>
-              <div className="mt-2 group relative flex justify-center rounded-lg border-2 border-dashed border-slate-600 hover:border-purple-400 transition-colors px-6 py-10">
-                {inputImageUrl ? (
-                    <div className="text-center relative">
-                        <img src={inputImageUrl} alt="Input preview" className="mx-auto h-48 w-auto rounded-md shadow-lg" />
-                        <button type="button" onClick={() => { setInputImage(null); setInputImageUrl(null); }} className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1.5 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800 focus:ring-red-500 transition-transform hover:scale-110">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              <div className="mt-2 group flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-600 hover:border-purple-400 transition-colors p-6">
+                {inputImageUrls.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-6 w-full">
+                    {inputImageUrls.map((url, index) => (
+                      <div key={url} className="relative group/image aspect-square">
+                        <img src={url} alt={`Input preview ${index + 1}`} className="w-full h-full object-cover rounded-md shadow-lg border-2 border-slate-700" />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveImage(index)}
+                          className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-red-500 transition-all transform hover:scale-110 opacity-0 group-hover/image:opacity-100"
+                          aria-label={`Remove image ${index + 1}`}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                         </button>
-                    </div>
-                ) : (
-                    <div className="text-center">
-                         <svg className="mx-auto h-12 w-12 text-slate-500 group-hover:text-purple-400 transition-colors" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                        <div className="mt-4 flex text-sm leading-6 text-slate-400">
-                            <label htmlFor="image-upload" className="relative cursor-pointer rounded-md font-semibold text-purple-400 focus-within:outline-none focus-within:ring-2 focus-within:ring-purple-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-900 hover:text-purple-300">
-                                <span>Upload a file</span>
-                                <input id="image-upload" name="image-upload" type="file" className="sr-only" accept="image/*" onChange={handleImageChange} />
-                            </label>
-                            <p className="pl-1">or drag and drop</p>
-                        </div>
-                        <p className="text-xs leading-5 text-slate-500">PNG, JPG, GIF up to 10MB</p>
-                    </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
+                <div className="text-center w-full">
+                   <svg className="mx-auto h-12 w-12 text-slate-500 group-hover:text-purple-400 transition-colors" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                  <div className="mt-4 flex text-sm leading-6 text-slate-400 justify-center">
+                      <label htmlFor="image-upload" className="relative cursor-pointer rounded-md font-semibold text-purple-400 focus-within:outline-none focus-within:ring-2 focus-within:ring-purple-500 focus-within:ring-offset-2 focus-within:ring-offset-slate-900 hover:text-purple-300">
+                          <span>{inputImageUrls.length > 0 ? 'Upload more files' : 'Upload a file'}</span>
+                          <input id="image-upload" name="image-upload" type="file" className="sr-only" accept="image/*" onChange={handleImageChange} multiple />
+                      </label>
+                      <p className="pl-1">or drag and drop</p>
+                  </div>
+                  <p className="text-xs leading-5 text-slate-500">PNG, JPG, GIF up to 10MB</p>
+                </div>
               </div>
             </div>
           )}
@@ -284,7 +309,7 @@ function App() {
               id="prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder={mode === 'text-to-image' ? "A futuristic city with flying cars..." : "Add a party hat to the cat..."}
+              placeholder={mode === 'text-to-image' ? "A futuristic city with flying cars..." : "Combine these images to create..."}
               className="w-full p-3 bg-slate-800 border border-slate-700 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition-shadow text-slate-200 placeholder-slate-500"
               rows={4}
               disabled={loading}
